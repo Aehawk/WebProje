@@ -20,7 +20,7 @@ namespace BookStore.Areas.Admin.Controllers
         }
         public IActionResult Index()
         {
-            List<Product> objProductList = _unitOfWork.Product.GetAll().ToList();
+            List<Product> objProductList = _unitOfWork.Product.GetAll(includeProperties:"Category").ToList();
             return View(objProductList);
         }
 
@@ -58,14 +58,33 @@ namespace BookStore.Areas.Admin.Controllers
                     string fileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
                     string productPath = Path.Combine(wwwRootPath, @"images\product");
 
+                    if (!string.IsNullOrEmpty(productVM.Product.ImageUrl))
+                    {
+                        var oldImagePath = Path.Combine(wwwRootPath, productVM.Product.ImageUrl.TrimStart('\\'));
+
+                        if (System.IO.File.Exists(oldImagePath))
+                        {
+                            System.IO.File.Delete(oldImagePath);
+                        }
+                    }
+
                     using (var fileStream = new FileStream(Path.Combine(productPath, fileName), FileMode.Create))
                     {
                         file.CopyTo(fileStream);
                     }
 
-                    productVM.Product.ImageUrl = @"\images\product" + fileName;
+                    productVM.Product.ImageUrl = @"\images\product\" + fileName;
                 }
-                _unitOfWork.Product.Add(productVM.Product);
+
+                if (productVM.Product.Id == 0)
+                {
+                    _unitOfWork.Product.Add(productVM.Product);
+                }
+                else
+                {
+                    _unitOfWork.Product.Update(productVM.Product);
+                }
+
                 _unitOfWork.Save();
                 TempData["success"] = "Product created successfully";
                 return RedirectToAction("Index");
@@ -81,32 +100,37 @@ namespace BookStore.Areas.Admin.Controllers
 			}
         }
 
-        public IActionResult Delete(int? id)
-        {
-            if (id == null || id == 0)
-            {
-                return NotFound();
-            }
-            Product? productFromDb = _unitOfWork.Product.Get(u => u.Id == id);
-            if (productFromDb == null)
-            {
-                return NotFound();
-            }
-            return View(productFromDb);
-        }
-        [HttpPost, ActionName("Delete")]
-        public IActionResult DeletePost(int? id)
-        {
-            Product? obj = _unitOfWork.Product.Get(u => u.Id == id);
-            if (obj == null)
-            {
-                return NotFound();
-            }
-            _unitOfWork.Product.Delete(obj);
-            _unitOfWork.Save();
-            TempData["success"] = "Product deleted successfully";
-            return RedirectToAction("Index");
+		#region
 
+		[HttpGet]
+		public IActionResult GetAll()
+        {
+            List<Product> objProductList = _unitOfWork.Product.GetAll(includeProperties: "Category").ToList();
+            return Json(new { data = objProductList });
         }
-    }
+
+		[HttpDelete]
+		public IActionResult Delete(int? id)
+		{
+            var productToBeDeleted = _unitOfWork.Product.Get(u =>u.Id == id);
+            if (productToBeDeleted == null)
+            {
+                return Json(new { success = false, message = "Error while deleting" });
+            }
+
+			var oldImagePath = Path.Combine(_webHostEnvironment.WebRootPath, productToBeDeleted.ImageUrl.TrimStart('\\'));
+
+			if (System.IO.File.Exists(oldImagePath))
+			{
+				System.IO.File.Delete(oldImagePath);
+			}
+
+            _unitOfWork.Product.Delete(productToBeDeleted);
+            _unitOfWork.Save();
+
+			List<Product> objProductList = _unitOfWork.Product.GetAll(includeProperties: "Category").ToList();
+			return Json(new { data = objProductList });
+		}
+		#endregion
+	}
 }
